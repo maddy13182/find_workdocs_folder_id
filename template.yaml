@@ -1,0 +1,101 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: >
+  python3.9
+
+  Sample SAM Template for workdocsproj
+
+# More info about Globals: https://github.com/awslabs/serverless-application-model/blob/master/docs/globals.rst
+Globals:
+  Function:
+    Timeout: 3
+Parameters:
+  DDBtable:
+    Type: String
+    Description: The DDB table name that has will be used to put folder details.
+    Default: 'us-east-1'
+  DDBtableARN:
+    Type: String
+    Description: The DDB table ARN.
+    Default: 'us-east-1'
+Resources:
+  findCreatedFolder:
+    Type: AWS::Serverless::Function # More info about Function Resource: https://github.com/awslabs/serverless-application-model/blob/master/versions/2016-10-31.md#awsserverlessfunction
+    Properties:
+      Environment:
+        Variables:
+          DDBtable: !Ref DDBtable 
+      Policies:
+      - Statement:
+        - Sid: workdocs
+          Effect: Allow
+          Action:
+          - workdocs:DescribeFolderContents
+          - workdocs:GetFolder
+          Resource: '*' 
+        - Sid: allowputitem
+          Effect: Allow
+          Action:
+          - dynamodb:PutItem
+          Resource: !Ref DDBtableARN
+      PackageType: Image
+      Architectures:
+        - x86_64
+    Metadata:
+      Dockerfile: Dockerfile
+      DockerContext: ./func
+      DockerTag: python3.9-v1
+
+
+  folderCreationEvent:
+    Type: AWS::Events::Rule
+    Properties:   
+      Description: this event is triggered when WS is terminated
+      Name: folderCreationEvent
+      EventPattern: {
+                      "source": [
+                        "aws.workdocs"
+                      ],
+                      "detail-type": [
+                        "AWS API Call via CloudTrail"
+                      ],
+                      "detail": {
+                        "eventSource": [
+                          "workdocs.amazonaws.com"
+                        ],
+                        "eventName": [
+                          "CreateFolder",
+                          "UpdateFolder"
+                        ]
+                      }
+                    }
+      State: ENABLED
+      Targets: 
+        - 
+          Arn:
+            Fn::GetAtt:
+              - "findCreatedFolder"
+              - "Arn"
+          Id: "findCreatedFolder"
+          
+  PermForFoldercreationEvent: 
+    Type: AWS::Lambda::Permission
+    Properties: 
+      FunctionName: 
+        Ref: 'findCreatedFolder'
+      Action: 'lambda:InvokeFunction'
+      Principal: 'events.amazonaws.com'
+      SourceArn: 
+        Fn::GetAtt: 
+          - 'folderCreationEvent'
+          - 'Arn'
+          
+Outputs:
+  # ServerlessRestApi is an implicit API created out of Events key under Serverless::Function
+  # Find out more about other implicit resources you can reference within SAM
+  # https://github.com/awslabs/serverless-application-model/blob/master/docs/internals/generated_resources.rst#api
+
+  findCreatedFolderFunction:
+    Description: "Hello World Lambda Function ARN"
+    Value: !GetAtt findCreatedFolder.Arn
+
